@@ -29,7 +29,6 @@ if [ $? -eq 1 ]; then
 echo ERROR: openssl is missing. Please install first
 exit 0
 fi
-exit
 
 if [ $# -ne 2 ]; then
 echo usage: ./init.sh \<domain\> \<ip\>
