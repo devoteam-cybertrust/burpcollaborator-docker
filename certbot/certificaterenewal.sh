@@ -30,7 +30,7 @@ echo Renewing certificate...
 docker stop burp
 docker rm burp
 cd $BASEDIR && \
-./certbot/renew.sh && \
+./certbot/renew.sh $DOMAIN  && \
 /bin/cp -f $BASEDIR/certbot/letsencrypt/live/$DOMAIN/*.pem $BASEDIR/burp/keys && \
 ./burp/run.sh && \
 echo Certificate renewed
