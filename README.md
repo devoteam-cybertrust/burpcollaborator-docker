@@ -47,7 +47,7 @@ The init.sh script will be renamed and disabled, so no accidents may happen.
 ## Certificate renewal
 
 * Edit the file ```./certbot/certificaterenewal.sh``` and configure the "```BASEDIR```" variable to the correct path of the main directory (where the init.sh script resides).
-* Optionally, edit the RENEWDAYS variable if you wish to. By default it will renew the certificate every 45 days. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 45 afterwards.*
+* Optionally, edit the RENEWDAYS variable if you wish to. By default it will renew the certificate every 60 days. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 60 afterwards.*
 * Set your crontab to run this script once a day.
 
 ## Updating Burp Suite
