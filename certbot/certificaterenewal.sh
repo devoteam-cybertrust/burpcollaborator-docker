@@ -5,7 +5,7 @@
 # requires openssl and bc
 #
 
-RENEWDAYS=45
+RENEWDAYS=30
 
 BASEDIR=/collab
 
