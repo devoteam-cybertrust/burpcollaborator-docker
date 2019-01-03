@@ -41,11 +41,9 @@ IP=$2
 echo Initialization to be done with domain *.$1 and public ip $2 && \
 read -p "Press any key to continue, or CTRL-C to bail out" var_p  && \
 
-docker build  -t certbot certbot && \
-docker build  -t dnsmasq dnsmasq && \
+docker build  -t certbot-burp certbot/certbot-dns-burp && \
 docker build  -t burp burp && \
 ./certbot/new.sh $DOMAIN && \
-docker stop dnsmasq && \
 /bin/cp -f ./certbot/letsencrypt/live/$DOMAIN/*.pem ./burp/keys && \
 /bin/sed -i "s/DOMAIN/$DOMAIN/g" ./burp/conf/burp.config && \
 /bin/sed -i "s/IP/$IP/g" ./burp/conf/burp.config && \
@@ -54,4 +52,3 @@ docker stop dnsmasq && \
 /bin/chmod 000 ./init.sh_has_been_run && \
 
 echo Burp is now running with the letsencrypt certificate for domain *.$DOMAIN
-
