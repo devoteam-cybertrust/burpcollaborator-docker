@@ -33,44 +33,8 @@ Check https://portswigger.net/burp/help/collaborator_deploying#dns for further i
 
 This will start the environment for the subdomain ```burp.example.com```, creating a wildcard certificate as ```*.burp.example.com```.
 
-At some point you'll be asked to deploy a DNS TXT record, similar to the following:
-
-> Obtaining a new certificate
-> Performing the following challenges:
-> dns-01 challenge for burp.example.com
-> dns-01 challenge for burp.example.com
-> 
-> Please deploy a DNS TXT record under the name
-> _acme-challenge.burp.example.com with the following value:
-> 
-> XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-> 
-> Before continuing, verify the record is deployed.
-> 
-> Press Enter to Continue
-
-The "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" will be acme challenge 1. You'll need it.
-Press *Enter*.
-
-You see a new record:
-
-
-> Please deploy a DNS TXT record under the name
-> _acme-challenge.burp.example.com with the following value:
-> 
-> YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
-> 
-> Before continuing, verify the record is deployed.
-> 
-> Press Enter to Continue
-
-**DON'T PRESS ENTER YET**
-
-This is acme challenge 2. Copy it and run in the second shell (replacing with your subdomain and your challenges, obviously):
-
-```./dnsmasq/run.sh burp.example.com XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY```
-
-Press "Enter" in the first shell.
+I'm using an ugly hack on the certbot-dns-cloudflare plugin from certbot, where it just runs a local dnsmasq with the required records, and makes
+all of this automagically happen.
 
 If everything is OK, burp will start with the following message:
 
@@ -91,7 +55,6 @@ The init.sh script will be renamed and disabled, so no accidents may happen.
 
 * Download it and make sure you put it in ```./burp/pkg/burp.jar```
 * Restart the container with ```docker restart burp```  
-
 
 ---
 **Author:** [Bruno Morisson](https://twitter.com/morisson)
