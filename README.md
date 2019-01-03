@@ -26,8 +26,7 @@ Check https://portswigger.net/burp/help/collaborator_deploying#dns for further i
 
 * Clone or download the repository to the server (tested on ubuntu 16.04) to a directory of your choice.
 * Put the Burp Suite JAR file in ```./burp/pkg/burp.jar``` (make sure the name is exactly ```burp.jar```, and it is the actual file **not a link**)
-* Make sure you have 2 shells opened on the server, as root.
-* Run init.sh in the first shell with your subdomain and server public IP address as argument:
+* Run init.sh with your subdomain and server public IP address as argument:
 
 ```./init.sh burp.example.com 1.2.3.4```
 
