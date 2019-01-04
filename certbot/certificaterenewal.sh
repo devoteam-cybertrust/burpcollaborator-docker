@@ -10,12 +10,7 @@ RENEWDAYS=30
 BASEDIR=/collab
 
 
-if [ $# -ne 1 ]; then
-echo usage: ./$0 \<domain\>
-exit 0
-fi
-
-DOMAIN=$1
+DOMAIN=%%DOMAIN%%
 
 CURRENT=`/bin/date +%s`
 CERTIFICATE=`/usr/bin/openssl x509 -noout -dates -in $BASEDIR/certbot/letsencrypt/live/$DOMAIN/cert.pem  | /bin/grep notAfter | /usr/bin/cut -d "=" -f 2`
