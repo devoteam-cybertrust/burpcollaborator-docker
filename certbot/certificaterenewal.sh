@@ -5,17 +5,12 @@
 # requires openssl and bc
 #
 
-RENEWDAYS=45
+RENEWDAYS=30
 
-BASEDIR=/collab
+BASEDIR=__BASEDIR__
 
 
-if [ $# -ne 1 ]; then
-echo usage: ./$0 \<domain\>
-exit 0
-fi
-
-DOMAIN=$1
+DOMAIN=__DOMAIN__
 
 CURRENT=`/bin/date +%s`
 CERTIFICATE=`/usr/bin/openssl x509 -noout -dates -in $BASEDIR/certbot/letsencrypt/live/$DOMAIN/cert.pem  | /bin/grep notAfter | /usr/bin/cut -d "=" -f 2`
@@ -30,9 +25,7 @@ echo Renewing certificate...
 docker stop burp
 docker rm burp
 cd $BASEDIR && \
-./dnsmasq/renew.sh && \
-./certbot/renew.sh $DOMAIN && \
-docker stop dnsmasq && \
+./certbot/renew.sh $DOMAIN  && \
 /bin/cp -f $BASEDIR/certbot/letsencrypt/live/$DOMAIN/*.pem $BASEDIR/burp/keys && \
 ./burp/run.sh && \
 echo Certificate renewed
