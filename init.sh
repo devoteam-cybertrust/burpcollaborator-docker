@@ -51,5 +51,6 @@ docker build  -t burp burp && \
 /bin/mv ./init.sh ./init.sh_has_been_run && \
 /bin/chmod 000 ./init.sh_has_been_run && \
 /bin/sed -i "s/%%DOMAIN%%/$DOMAIN/g" ./certbot/certificaterenewal.sh && \
+/bin/sed -i "s/%%BASEDIR%%/$PWD/g" ./certbot/certificaterenewal.sh && \
 
 echo Burp is now running with the letsencrypt certificate for domain *.$DOMAIN
