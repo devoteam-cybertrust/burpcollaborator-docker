@@ -46,8 +46,8 @@ The init.sh script will be renamed and disabled, so no accidents may happen.
 
 ## Certificate renewal
 
-* There's a renewal script in ./certbot/certificaterenewal.sh. It renews if the certificate expires in 30 days or less;
-* Optionally, edit the RENEWDAYS variable if you wish to. By default it will renew the certificate every 60 days. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 60 afterwards.;
+* There's a renewal script in ```./certbot/certificaterenewal.sh```. When run, it renews the certificate if it expires in 30 days or less;
+* Optionally, edit the RENEWDAYS variable if you wish to. By default it will renew the certificate every 60 days. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 60 afterwards.*;
 * Set your crontab to run this script once a day.
 
 ## Updating Burp Suite
