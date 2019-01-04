@@ -7,10 +7,10 @@
 
 RENEWDAYS=30
 
-BASEDIR=%%BSASEDIR%%
+BASEDIR=__BSASEDIR__
 
 
-DOMAIN=%%DOMAIN%%
+DOMAIN=__DOMAIN__
 
 CURRENT=`/bin/date +%s`
 CERTIFICATE=`/usr/bin/openssl x509 -noout -dates -in $BASEDIR/certbot/letsencrypt/live/$DOMAIN/cert.pem  | /bin/grep notAfter | /usr/bin/cut -d "=" -f 2`
