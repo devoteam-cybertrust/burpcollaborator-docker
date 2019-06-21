@@ -11,7 +11,7 @@ Delegate a subdomain to your soon to be burp collaborator server IP address. At 
 
 ```burpserver.example.com IN A 1.2.3.4```
 
-Check https://portswigger.net/burp/help/collaborator_deploying#dns for further info.
+Check https://portswigger.net/burp/documentation/collaborator/deploying#dns-configuration for further info.
 
 ## Requirements
 
