@@ -35,3 +35,22 @@ else
 echo Still $DAYS days to expire. Not renewing
 
 fi
+
+echo waiting for 5 seconds just to make sure all is ok!
+
+sleep 5
+
+if [ ! "$(docker ps -q -f name=burp)" ]; then
+    if [ "$(docker ps -aq -f status=exited -f name=burp)" ]; then
+        # cleanup
+        docker rm burp
+    fi
+    # run your container
+    #docker run -d --name <name> my-docker-image
+    $BASEDIR/burp/run.sh
+    echo burp docker has been restarted
+else
+
+echo burp docker is running
+
+fi
