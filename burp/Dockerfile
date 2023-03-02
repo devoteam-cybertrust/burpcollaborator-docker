@@ -1,8 +1,8 @@
-FROM debian
+FROM debian:bullseye-slim
 
 RUN apt-get update && \
     apt-get -yqq dist-upgrade
-RUN apt-get -yqq install default-jre && \
+RUN apt-get -yqq install openjdk-17-jdk && \
     apt-get autoremove -yqq && \
     apt-get clean && \
     /bin/rm -rf /var/lib/apt/lists/*
