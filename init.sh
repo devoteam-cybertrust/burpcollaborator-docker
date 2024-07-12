@@ -63,16 +63,34 @@ read -p "Press any key to continue, or CTRL-C to bail out" var_p
     # check if docker works
     docker container ls || handle_docker_permission_error
 
+    # build the containers
     docker build -t certbot-burp certbot/certbot-dns-burp
     docker build -t burp burp
+
+    # Get certs for the first time. The certbot container will be removed automatically afterwards.
     ./certbot/new.sh $DOMAIN
-    sudo /bin/cp -r -f ./certbot/letsencrypt/live/$DOMAIN/ ./burp/keys
+
+    # The symlinks from certbot will be wrong.
+    # Copy the actual certificate files from the archive directory to burp/keys
+    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/cert1.pem ./burp/keys/cert.pem
+    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/chain1.pem ./burp/keys/chain.pem
+    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/fullchain1.pem ./burp/keys/fullchain.pem
+    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/privkey1.pem ./burp/keys/privkey.pem
+    
+    # Change ownership of the privkey.pem file to UID 999 and GID 999
+    sudo chown 999:999 ./burp/keys/privkey.pem
+
+    # Replace placeholders in burp config
     sudo /bin/sed -i "s/DOMAIN/$DOMAIN/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/IP/$IP/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/jnaicmez8/$METRICS/g" ./burp/conf/burp.config
+    
+    # run the burp container
     ./burp/run.sh
     sudo /bin/mv ./init.sh ./init.sh_has_been_run
     sudo /bin/chmod 000 ./init.sh_has_been_run
+    
+    # replace placeholders in renewal script
     sudo /bin/sed -i "s/__DOMAIN__/$DOMAIN/g" ./certbot/certificaterenewal.sh
     sudo /bin/sed -i "s#__BASEDIR__#$PWD#g" ./certbot/certificaterenewal.sh
 } || {
