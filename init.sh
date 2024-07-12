@@ -66,7 +66,7 @@ read -p "Press any key to continue, or CTRL-C to bail out" var_p
     docker build -t certbot-burp certbot/certbot-dns-burp
     docker build -t burp burp
     ./certbot/new.sh $DOMAIN
-    sudo /bin/cp -f ./certbot/letsencrypt/live/$DOMAIN/*.pem ./burp/keys
+    sudo /bin/cp -r -f ./certbot/letsencrypt/live/$DOMAIN/ ./burp/keys
     sudo /bin/sed -i "s/DOMAIN/$DOMAIN/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/IP/$IP/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/jnaicmez8/$METRICS/g" ./burp/conf/burp.config
