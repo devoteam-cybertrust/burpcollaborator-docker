@@ -4,12 +4,39 @@ This repository includes a set of scripts to install a Burp Collaborator Server 
 The objective is to simplify as much as possible the process of setting up and maintaining the server.
 
 ## Setup your domain
+Delegate a domain or subdomain to your soon-to-be burp collaborator server IP address. At the minimum you'll need an NS record for the domain/subdomain to be used.  
 
-Delegate a subdomain to your soon to be burp collaborator server IP address. At the minimum you'll need a NS record for the subdomain to be used (e.g. burp.example.com) pointing to your new server's A record:
+For example, if your collaborator domain is `burpserver.example`, you need to make NS records pointing with an A record to the public IP of the server: `1.2.3.4`
 
-```burp.example.com IN NS burpserver.example.com```
+Here as an example `dig` command to confirm:
+```bash
+dig NS burpserver.example
 
-```burpserver.example.com IN A 1.2.3.4```
+Output:
+; <<>> DiG 9.10.6 <<>> NS burpserver.example
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49449
+;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 3
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4000
+;; QUESTION SECTION:
+;burpserver.example.                       IN      NS
+
+;; ANSWER SECTION:
+burpserver.example.                308     IN      NS      ns2.burpserver.example.
+burpserver.example.                308     IN      NS      ns1.burpserver.example.
+
+;; ADDITIONAL SECTION:
+ns2.burpserver.example.            308     IN      A       1.2.3.4
+ns1.burpserver.example.            308     IN      A       1.2.3.4
+
+;; Query time: 52 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8)
+;; WHEN: Fri Jul 12 11:20:29 EDT 2024
+;; MSG SIZE  rcvd: 104
+```
 
 Check https://portswigger.net/burp/documentation/collaborator/deploying#dns-configuration for further info.
 
