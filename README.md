@@ -80,7 +80,56 @@ The init.sh script will be renamed and disabled, so no accidents may happen.
 ## Updating Burp Suite
 
 * Download it and make sure you put it in ```./burp/pkg/burp.jar```
-* Restart the container with ```docker restart burp```  
+* Restart the container with ```docker restart burp```
+
+## Docker and UFW
+If you use UFW/IPTables as your firewall on the host, both UFW and docker modify the same [iptables](https://en.wikipedia.org/wiki/Iptables "iptables") configurations. Whatever UFW rules you have set, running a docker container completely ignores them and allows traffic, regardless of whether you explicitly block access. In order to fix the issue and be able to use UFW properly with docker, read this: 
+
+https://blog.jarrousse.org/2023/03/18/how-to-use-ufw-firewall-with-docker-containers/
+
+These instructions assume you have the default docker set up and didn't try to fix the problem yourself yet.
+**Download `ufw-docker` script**
+```bash
+sudo wget -O /usr/local/bin/ufw-docker https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
+sudo chmod +x /usr/local/bin/ufw-docker
+```
+
+Then using the following command to modify the `after.rules` file of `ufw`
+```bash
+ufw-docker install
+```
+
+reboot the host and check if you can access the ports of your container.
+
+Now allow the traffic to the ports on the containers
+- Use the actual port thats open on the container, not the one its binded to on the host
+- `burp` is the container name, so thats what we use with below command
+```bash
+docker ps -a
+sudo ufw-docker allow burp 8443
+```
+<img width="1718" alt="Pasted image 20240713201717" src="https://github.com/user-attachments/assets/be02f47e-5088-4d55-a5fa-ae3e9b137430">
+
+I have provided the commands conventiently for you here:
+```bash
+sudo ufw-docker allow burp 8053
+sudo ufw-docker allow burp 8053/udp
+sudo ufw-docker allow burp 8080
+sudo ufw-docker allow burp 8443
+sudo ufw-docker allow burp 8465
+sudo ufw-docker allow burp 8587
+sudo ufw-docker allow burp 8080
+```
+
+I HIGHLY recommend restricting access to your polling port from an IP address or network. Don't allow the general internet to use your burp collab server for free!
+- `your_whitelisted_ip` is your public IP to allow access from
+- `your_containers_local_ip` is 172.x.x.x
+
+```bash
+ufw route allow proto tcp from your_whitelisted_ip to your_containers_local_ip port 9443
+```
+
+You should be good to go and have your UFW locked down!
 
 ---
 **Author:** [Bruno Morisson](https://twitter.com/morisson)
