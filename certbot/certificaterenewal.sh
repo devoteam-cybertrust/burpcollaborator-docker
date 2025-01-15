@@ -26,7 +26,8 @@ docker stop burp
 docker rm burp
 cd $BASEDIR && \
 ./certbot/renew.sh $DOMAIN  && \
-/bin/cp -f $BASEDIR/certbot/letsencrypt/live/$DOMAIN/*.pem $BASEDIR/burp/keys && \
+/bin/cp -r -f $BASEDIR/certbot/letsencrypt/live/$DOMAIN/ $BASEDIR/burp/keys && \
+chown 999:999 $PWD/burp/keys/$DOMAIN/privkey.pem && \
 ./burp/run.sh && \
 echo Certificate renewed
 
