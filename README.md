@@ -4,16 +4,22 @@ This repository includes a set of scripts to install a Burp Collaborator Server 
 The objective is to simplify as much as possible the process of setting up and maintaining the server.
 
 ## Setup your domain
-Delegate a domain or subdomain to your soon-to-be burp collaborator server IP address. At the minimum you'll need an NS record for the domain/subdomain to be used.  
+Delegate a domain or subdomain to your soon-to-be burp collaborator server IP address.
 
-For example, if your collaborator domain is `burpserver.example`, you need to make NS records pointing with an A record to the public IP of the server: `1.2.3.4`
+If your collaborator domain is `burp.example`, you need to make `glue` records pointing to the public IP of the server, e.g. `1.2.3.4`.  
+In your domain registrar, find where to manage `glue` records for your domain. Create one for `ns1.burp.example` and `ns2.burp.example`.
+![glue reords](images/glue_records.png)
+![glue records2](images/glue_records2.png)
 
-Here as an example `dig` command to confirm:
+Then make sure to make your `glue` records the primary nameservers for the domain:
+![nameservers](images/nameservers.png)
+
+After waiting an hour or more for the records to propogate, below is an example of using the `dig` command to confirm:
 ```bash
-dig NS burpserver.example
+dig NS burp.example
 
 Output:
-; <<>> DiG 9.10.6 <<>> NS burpserver.example
+; <<>> DiG 9.10.6 <<>> NS burp.example
 ;; global options: +cmd
 ;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49449
@@ -22,15 +28,15 @@ Output:
 ;; OPT PSEUDOSECTION:
 ; EDNS: version: 0, flags:; udp: 4000
 ;; QUESTION SECTION:
-;burpserver.example.                       IN      NS
+;burp.example.                       IN      NS
 
 ;; ANSWER SECTION:
-burpserver.example.                308     IN      NS      ns2.burpserver.example.
-burpserver.example.                308     IN      NS      ns1.burpserver.example.
+burp.example.                308     IN      NS      ns2.burp.example.
+burp.example.                308     IN      NS      ns1.burp.example.
 
 ;; ADDITIONAL SECTION:
-ns2.burpserver.example.            308     IN      A       1.2.3.4
-ns1.burpserver.example.            308     IN      A       1.2.3.4
+ns2.burp.example.            308     IN      A       1.2.3.4
+ns1.burp.example.            308     IN      A       1.2.3.4
 
 ;; Query time: 52 msec
 ;; SERVER: 8.8.8.8#53(8.8.8.8)

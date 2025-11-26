@@ -18,10 +18,9 @@ check_file() {
 
 # Check if a command exists
 check_command() {
-    which "$1" > /dev/null 2>&1
-    if [ $? -eq 1 ]; then
+    if ! command -v "$1" >/dev/null 2>&1; then
         echo "ERROR: $1 is missing. Please install first."
-        exit 0
+        exit 1
     fi
 }
 
