@@ -1,2 +1,7 @@
 ﻿/burp/pkg/*
 .vscode/
+*.pem
+*.jar
+*.log*
+burp.config
+init.sh_has_been_run
