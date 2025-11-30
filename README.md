@@ -20,16 +20,21 @@ If your collaborator domain is `burp.example`, you need to make `glue` records p
 In your domain registrar, find where to manage `glue` records for your domain. 
 
 Create one for `ns1.burp.example` and `ns2.burp.example`:
-![glue reords](images/glue_records.png)
-![glue records2](images/glue_records2.png)
 
-Then make sure to make your `glue` records the primary nameservers for the domain:
-![nameservers](images/nameservers.png)
+<img src=images/glue_records.png width=200>  
+
+<img src=images/glue_records2.png width=400>  
+
+<br>
+Make sure to make your `glue` records the primary nameservers for the domain:  
+
+<img src=images/nameservers.png width=200>
 
 After waiting an hour or more, below is an example of using https://dnschecker.org/#NS/burp.example to check if records have propogated. 
 
 In some cases, not all DNS servers will propogate the records until burp is up and running. Once you start seeing a couple green checkmarks, it should be OK to proceed.
-![dnschecker](images/dnschecker.com.png)
+
+<img src=images/dnschecker.com.png width=500>  
 
 Check https://portswigger.net/burp/documentation/collaborator/deploying#dns-configuration for further info.
 
