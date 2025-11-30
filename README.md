@@ -68,58 +68,62 @@ The `init.sh` script will be renamed and disabled, so no accidents may happen.
 * Download it and make sure you put it in ```./burp/pkg/burp.jar```
 * Restart the container with ```docker restart burp```
 
-## Docker and UFW
-If you use UFW/IPTables as your firewall on the host, both UFW and docker modify the same [iptables](https://en.wikipedia.org/wiki/Iptables "iptables") configurations. Whatever UFW rules you have set, running a docker container completely ignores them and allows traffic, regardless of whether you explicitly block access. In order to fix the issue and be able to use UFW properly with docker, read this: 
+## Hardening with UFW
+Both UFW and Docker modify the same [iptables](https://en.wikipedia.org/wiki/Iptables "iptables") configurations. Whatever rules you have set, running a docker container completely ignores them and allows traffic, regardless of whether you explicitly block access.
 
-https://blog.jarrousse.org/2023/03/18/how-to-use-ufw-firewall-with-docker-containers/
+In order to fix the issue and be able to use UFW properly with docker, we can use `udwall`: 
+https://github.com/HexmosTech/udwall
 
-These instructions assume you have the default docker set up and didn't try to fix the problem yourself yet.
-**Download `ufw-docker` script**
+1) Set up your intended UFW rules. 
+
+Make sure you add a rule to allow yourself to SSH into your server, so you don't get locked out.
 ```bash
-sudo wget -O /usr/local/bin/ufw-docker https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
-sudo chmod +x /usr/local/bin/ufw-docker
+sudo ufw allow ssh
 ```
 
-Then using the following command to modify the `after.rules` file of `ufw`
+2) The below assumes you're using the default ports from this repo's config. These ports should be allowed from all IPs, as this is how you use Collaborator to test for out-of-band interactions from your target.
+- Note each rule has to be on its own line in order for `udwall` to detect them properly, such as below:
 ```bash
-ufw-docker install
+sudo ufw allow 8080/tcp
+sudo ufw allow 8443/tcp
+sudo ufw allow 8025/tcp
+sudo ufw allow 8587/tcp
+sudo ufw allow 8465/tcp
+sudo ufw allow 8053/udp
 ```
 
-reboot the host and check if you can access the ports of your container.
-
-Now allow the traffic to the ports on the containers
-- Use the actual port thats open on the container, not the one its binded to on the host
-- `burp` is the container name, so thats what we use with below command
+You should restrict access to tcp 9443 or 9090 from specific IP addresses. This will prevent unauthorized users from abusing your collaborator server. 
+- Replace `x.x.x.x` with your desired IP address
 ```bash
-docker ps -a
-sudo ufw-docker allow burp 8443
-```
-<img width="1718" alt="Pasted image 20240713201717" src="https://github.com/user-attachments/assets/be02f47e-5088-4d55-a5fa-ae3e9b137430">
+sudo ufw allow from x.x.x.x proto tcp to any port 9443
 
-I have provided the commands conventiently for you here:
-```bash
-sudo ufw-docker allow burp 8053
-sudo ufw-docker allow burp 8053/udp
-sudo ufw-docker allow burp 8080
-sudo ufw-docker allow burp 8443
-sudo ufw-docker allow burp 8465
-sudo ufw-docker allow burp 8587
-sudo ufw-docker allow burp 8080
+# Optional - if using HTTP to poll
+sudo ufw allow from x.x.x.x proto tcp to any port 9090
 ```
 
-I HIGHLY recommend restricting access to your polling port from an IP address or network. Don't allow the general internet to use your burp collab server for free!
-- `your_whitelisted_ip` is your public IP to allow access from
-- `your_containers_local_ip` is 172.x.x.x
-
+3) Create the `udwall` config based on your existing UFW rules:
 ```bash
-ufw route allow proto tcp from your_whitelisted_ip to your_containers_local_ip port 9443
+sudo udwall --create
 ```
 
-You should be good to go and have your UFW locked down!
+The udwall config will be generated to `/etc/udwall/udwall.conf` 
 
----
-**Author:** [Bruno Morisson](https://twitter.com/morisson)
+4) Run the below command to grab the burp container's IP. 
+- In my example, it is `172.17.0.2`
+```bash
+sudo udwall --dip
+```
 
-Thanks to [Fábio Pires](https://twitter.com/fabiopirespt) (check his burp collaborator w/letsencrypt [tutorial](https://blog.fabiopires.pt/running-your-instance-of-burp-collaborator-server/)) and [Herman Duarte](https://twitter.com/hdontwit) (for betatesting and fixes)
+5) Edit the `udwall` config. Make sure the ports that are for the burp container have the following: `'dip': 'container_ip_here'` and  `'isDockerServed': True'`
 
+The syntax for the config file is available on the `udwall` github.
+![udwall config](images/udwall_config.png)
 
+6) Finally, apply and enable the `udwall` config. This will back up your current state, remove undefined rules, and apply the new ones based on the configuration file.
+- Backups are stored in `$HOME/.udwall/backups`.
+```bash
+sudo udwall --apply
+sudo udwall --enable
+```
+
+If all is well and good, https://burp.example should be reachable via your browser, and https://burp.example:9443 should be pollable by your Burp.
