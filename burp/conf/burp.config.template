@@ -1,0 +1,78 @@
+{
+    "serverDomain": "DOMAIN",
+    "workerThreads": 40,
+    "eventCapture": {
+        "localAddress": [
+            "0.0.0.0"
+        ],
+        "publicAddress": [
+            "IP"
+        ],
+        "http": {
+            "port": 8080
+        },
+        "https": {
+            "port": 8443,
+            "certificateFiles": [
+                "/opt/burp/keys/privkey.pem",
+                "/opt/burp/keys/cert.pem",
+                "/opt/burp/keys/fullchain.pem"
+            ]
+        },
+        "smtp": {
+            "ports": [
+                8025,
+                8587
+            ]
+        },
+        "smtps": {
+            "port": 8465,
+            "certificateFiles": [
+                "/opt/burp/keys/privkey.pem",
+                "/opt/burp/keys/cert.pem",
+                "/opt/burp/keys/fullchain.pem"
+            ]
+        }
+    },
+    "polling": {
+        "localAddress": "0.0.0.0",
+        "http": {
+            "localAddress": "0.0.0.0",
+            "publicAddress": [
+                "IP"
+            ],
+            "port": 9090
+        },
+        "https": {
+            "port": 9443,
+            "localAddress": "0.0.0.0",
+            "publicAddress": [
+                "IP"
+            ],
+            "certificateFiles": [
+                "/opt/burp/keys/privkey.pem",
+                "/opt/burp/keys/cert.pem",
+                "/opt/burp/keys/fullchain.pem"
+            ]
+        }
+    },
+    "metrics": {
+        "path": "jnaicmez8",
+        "addressWhitelist": [
+            "127.0.0.1/32"
+        ]
+    },
+    "dns": {
+        "interfaces": [
+            {
+                "publicAddress": [
+                    "IP"
+                ],
+                "localAddress": "0.0.0.0",
+                "name": "ns1"
+            }
+        ],
+        "port": 8053
+    },
+    "logLevel": "DEBUG"
+}

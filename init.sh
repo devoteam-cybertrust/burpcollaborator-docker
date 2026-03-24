@@ -42,9 +42,15 @@ if [ -e ./init.sh_has_been_run ]; then
     exit 0
 fi
 
+if [ -e ./.init_has_been_run ]; then
+    echo "Script has already been run. Bailing out."
+    exit 0
+fi
+
 check_file "burp.jar"
 check_command "docker"
 check_command "bc"
+check_command "jq"
 check_command "openssl"
 
 if [ $# -ne 2 ]; then
@@ -72,27 +78,23 @@ read -p "Press any key to continue, or CTRL-C to bail out" var_p
 
     # The symlinks from certbot will be wrong.
     # Copy the actual certificate files from the archive directory to burp/keys
-    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/cert1.pem ./burp/keys/cert.pem
-    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/chain1.pem ./burp/keys/chain.pem
-    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/fullchain1.pem ./burp/keys/fullchain.pem
-    sudo cp ./certbot/letsencrypt/archive/$DOMAIN/privkey1.pem ./burp/keys/privkey.pem
+    sudo cp -L ./certbot/letsencrypt/archive/$DOMAIN/cert1.pem ./burp/keys/cert.pem
+    sudo cp -L ./certbot/letsencrypt/archive/$DOMAIN/chain1.pem ./burp/keys/chain.pem
+    sudo cp -L ./certbot/letsencrypt/archive/$DOMAIN/fullchain1.pem ./burp/keys/fullchain.pem
+    sudo cp -L ./certbot/letsencrypt/archive/$DOMAIN/privkey1.pem ./burp/keys/privkey.pem
     
     # Change ownership of the privkey.pem file to UID 999 and GID 999
     sudo chown 999:999 ./burp/keys/privkey.pem
 
     # Replace placeholders in burp config
+    sudo cp ./burp/conf/burp.config.template ./burp/conf/burp.config
     sudo /bin/sed -i "s/DOMAIN/$DOMAIN/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/IP/$IP/g" ./burp/conf/burp.config
     sudo /bin/sed -i "s/jnaicmez8/$METRICS/g" ./burp/conf/burp.config
     
     # run the burp container
     ./burp/run.sh
-    sudo /bin/mv ./init.sh ./init.sh_has_been_run
-    sudo /bin/chmod 000 ./init.sh_has_been_run
-    
-    # replace placeholders in renewal script
-    sudo /bin/sed -i "s/__DOMAIN__/$DOMAIN/g" ./certbot/certificaterenewal.sh
-    sudo /bin/sed -i "s#__BASEDIR__#$PWD#g" ./certbot/certificaterenewal.sh
+    echo 1 > ./.init_has_been_run
 } || {
     echo "An error occurred during the execution of the script. Please check the output for details."
     exit 1

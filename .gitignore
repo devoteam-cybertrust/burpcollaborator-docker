@@ -1,1 +1,6 @@
-﻿/burp/pkg/*
+burp/pkg/*
+burp/keys/*
+burp/conf/burp.config
+certbot/letsencrypt/*
+certbot/logs/*
+.init_has_been_run
