@@ -69,7 +69,7 @@ If everything is OK, burp will start with the following message:
 You can check by running ```docker ps```, and going to burp, and pointing the collaborator configuration to your new server. 
 Keep it mind that this configuration configures the *polling server on port 9443*.
 
-The init.sh script will be renamed and disabled, so no accidents may happen.
+The init.sh script produces a flag file to mark that it has already been run which prevents the script from re-executing and overwriting data, ensuring no accidents happen.
 
 ## Certificate renewal
 
@@ -130,6 +130,31 @@ ufw route allow proto tcp from your_whitelisted_ip to your_containers_local_ip p
 ```
 
 You should be good to go and have your UFW locked down!
+
+## Returning static web content
+
+Sometimes you might want to return some static HTML content when someone navigates to your instance IP or domain. For example, you may want to return some kind of notice if someone sees your IP in audit logs and tries to investigate what it is or who it's coming from.
+
+You can configure Burp to return static HTML content by adding this section in your `./burp/conf/burp.config` file:
+
+```
+{
+    ...
+
+    "customHttpContent": [
+        {
+            "path": "/",
+            "contentType": "text/html",
+            "base64Content": "<insert base64 encoded HTML>"
+        }
+    ],
+
+    ...
+
+}
+```
+
+You'll need to write raw HTML that can be rendered by a browser, then base64 encode the contents and insert it in the `base64Content` field above.
 
 ---
 **Author:** [Bruno Morisson](https://twitter.com/morisson)
