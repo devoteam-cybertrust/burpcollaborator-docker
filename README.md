@@ -42,16 +42,17 @@ Check https://portswigger.net/burp/documentation/collaborator/deploying#dns-conf
 
 ## Requirements
 
-* Internet accessible server 
+* Internet accessible server
 * bash
 * docker
-* bc 
+* bc
+* jq
 * openssl
 * Burp Suite Professional
 
 ## Setup the environment 
 
-* Clone or download the repository to the server (tested on ubuntu 16.04) to a directory of your choice.
+* Clone or download the repository to the server to a directory of your choice.
 * Put the Burp Suite JAR file in ```./burp/pkg/burp.jar``` (make sure the name is exactly ```burp.jar```, and it is the actual file **not a link**)
 * Run init.sh with your subdomain and server public IP address as argument:
 
@@ -59,8 +60,7 @@ Check https://portswigger.net/burp/documentation/collaborator/deploying#dns-conf
 
 This will start the environment for the subdomain ```burp.example.com```, creating a wildcard certificate as ```*.burp.example.com```.
 
-I'm using an ugly hack on the certbot-dns-cloudflare plugin from certbot, where it just runs a local dnsmasq with the required records, and makes
-all of this automagically happen.
+During certificate issuance, Burp Collaborator's built-in DNS server is used to serve the ACME DNS-01 challenge records. Certbot runs with manual hooks that inject the challenge TXT records into Burp's configuration and restart it as needed.
 
 If everything is OK, burp will start with the following message:
 
@@ -73,8 +73,8 @@ The init.sh script produces a flag file to mark that it has already been run whi
 
 ## Certificate renewal
 
-* There's a renewal script in ```./certbot/certificaterenewal.sh```. When run, it renews the certificate if it expires in 30 days or less;
-* Optionally, edit the RENEWDAYS variable if you wish to. By default it will renew the certificate every 60 days. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 60 afterwards.*;
+* There's a renewal script in ```./certbot/certificaterenewal.sh```. When run, it renews the certificate if it expires in 30 days or less. The domain is read automatically from ```burp.config```;
+* Optionally, edit the RENEWDAYS variable if you wish to. *If you want to force the renewal to check if everything is working, just set it to 89 days, and run it manually. Remember to set it back to 30 afterwards.*;
 * Set your crontab to run this script once a day.
 
 ## Updating Burp Suite
