@@ -8,6 +8,7 @@ echo "Running certbot renewal"
 docker run --rm --name certbot --hostname certbot $TTY_FLAGS \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$PWD/burp/conf":/opt/burp/conf \
+    -v "$PWD/burp/keys":/opt/burp/keys \
     -v "$PWD/certbot/logs":/var/log/letsencrypt \
     -v "$PWD/certbot/letsencrypt":/etc/letsencrypt/ \
-    certbot-burp renew --force-renewal
+    certbot-burp renew --deploy-hook /opt/hooks/deploy-hook.sh

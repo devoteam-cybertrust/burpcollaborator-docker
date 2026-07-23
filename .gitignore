@@ -3,5 +3,5 @@
 /burp/conf/burp.config
 /certbot/letsencrypt/*
 /certbot/logs/*
-init.sh_has_been_run
-.init_has_been_run
+collaborator.conf
+__pycache__/

@@ -1,4 +1,5 @@
 #!/bin/sh
+set -eu
 #
 # Certbot auth hook for DNS-01 challenge.
 # Adds an _acme-challenge TXT record to Burp Collaborator's config
@@ -7,6 +8,8 @@
 # Certbot provides: CERTBOT_DOMAIN, CERTBOT_VALIDATION
 
 CONFIG=/opt/burp/conf/burp.config
+TMP="$CONFIG.tmp.$$"
+trap 'rm -f "$TMP"' EXIT HUP INT TERM
 
 # Append a TXT record to customDnsRecords (create array if absent)
 jq --arg val "$CERTBOT_VALIDATION" '
@@ -15,7 +18,8 @@ jq --arg val "$CERTBOT_VALIDATION" '
   else
     .customDnsRecords = [{"label": "_acme-challenge", "type": "TXT", "record": $val, "ttl": 60}]
   end
-' "$CONFIG" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
+' "$CONFIG" > "$TMP"
+mv "$TMP" "$CONFIG"
 
 # Restart Burp to pick up the new DNS record
 docker restart -t 5 burp

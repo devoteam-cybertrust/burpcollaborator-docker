@@ -1,0 +1,621 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+shopt -s extglob
+
+BASE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd "$BASE_DIR"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  ./collaborator up
+  ./collaborator up --config FILE
+  ./collaborator up --domain DOMAIN --ip ADDRESS [--jar FILE | --download-jar]
+  ./collaborator up [domain] [public-ip] [burp-jar]
+  ./collaborator down
+  ./collaborator status
+  ./collaborator logs
+  ./collaborator renew
+
+Run `./collaborator up` with no arguments for guided first-time setup.
+CLI flags override values loaded from a config file.
+
+Certificate options:
+  --certificate-source letsencrypt|files
+  --cert FILE --key FILE (--chain FILE | --fullchain FILE)
+
+JAR options:
+  --jar FILE       Copy a local JAR into the deployment
+  --download-jar  Explicitly download the latest stable JAR from PortSwigger
+
+If no managed JAR exists during first-time setup, it is downloaded automatically.
+Existing managed JARs are never updated unless --download-jar is supplied.
+EOF
+}
+
+require_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "ERROR: Docker is required. Install Docker, then run this command again." >&2
+        exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "ERROR: Docker is installed, but this user cannot access the Docker daemon." >&2
+        echo "Start Docker or add your user to the docker group, then try again." >&2
+        exit 1
+    fi
+}
+
+configured() {
+    [ -s burp/conf/burp.config ] &&
+        [ -s burp/pkg/burp.jar ] &&
+        [ -s burp/keys/privkey.pem ]
+}
+
+ensure_images() {
+    if ! docker image inspect certbot-burp >/dev/null 2>&1; then
+        docker build -t certbot-burp certbot
+    fi
+    if ! docker image inspect burp >/dev/null 2>&1; then
+        docker build -t burp burp
+    fi
+}
+
+download_burp_jar() {
+    echo "Burp downloads are subject to PortSwigger's license terms:"
+    echo "https://portswigger.net/burp/eula"
+    echo "Preparing the verified JAR downloader..."
+    docker build -q -t certbot-burp certbot >/dev/null
+    local output
+    output=$(docker run --rm --entrypoint python3 \
+        -v "$PWD/burp/pkg:/pkg" certbot-burp \
+        /opt/download_burp_jar.py --output /pkg/burp.jar)
+    echo "$output" | sed '/^BURP_JAR_CHANGED=/d'
+    if grep -q '^BURP_JAR_CHANGED=1$' <<< "$output"; then
+        JAR_CHANGED=1
+    else
+        JAR_CHANGED=0
+    fi
+}
+
+install_local_jar() {
+    local source=$1 temporary=burp/pkg/.burp.jar.tmp
+    [ -f "$source" ] || { echo "ERROR: Burp JAR not found at '$source'." >&2; exit 1; }
+    if [ -s burp/pkg/burp.jar ] && cmp -s "$source" burp/pkg/burp.jar; then
+        echo "The supplied Burp JAR is already installed."
+        JAR_CHANGED=0
+        return
+    fi
+    cp "$source" "$temporary"
+    mv "$temporary" burp/pkg/burp.jar
+    JAR_CHANGED=1
+    echo "Burp JAR installed from '$source'."
+}
+
+prompt_value() {
+    local name=$1
+    local prompt=$2
+    local value=${3:-}
+
+    if [ -z "$value" ]; then
+        if [ ! -t 0 ]; then
+            echo "ERROR: Missing $name. Pass it on the command line." >&2
+            exit 1
+        fi
+        read -r -p "$prompt: " value
+    fi
+    if [ -z "$value" ]; then
+        echo "ERROR: $name cannot be empty." >&2
+        exit 1
+    fi
+    printf '%s' "$value"
+}
+
+trim() {
+    local value=$1
+    value=${value##+([[:space:]])}
+    value=${value%%+([[:space:]])}
+    printf '%s' "$value"
+}
+
+load_config() {
+    local file=$1 line key value line_number=0
+
+    if [ ! -f "$file" ]; then
+        echo "ERROR: Config file not found at '$file'." >&2
+        exit 1
+    fi
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        line_number=$((line_number + 1))
+        line=${line%$'\r'}
+        line=$(trim "$line")
+        [ -z "$line" ] && continue
+        [[ "$line" == \#* ]] && continue
+        if [[ "$line" != *=* ]]; then
+            echo "ERROR: Invalid config entry at $file:$line_number; expected key=value." >&2
+            exit 1
+        fi
+        key=$(trim "${line%%=*}")
+        value=$(trim "${line#*=}")
+        case $key in
+            domain) CONFIG_DOMAIN=$value ;;
+            public_ip) CONFIG_IP=$value ;;
+            burp_jar) CONFIG_JAR=$value ;;
+            burp_jar_source) CONFIG_JAR_SOURCE=$value ;;
+            certificate_source) CONFIG_CERT_SOURCE=$value ;;
+            certificate_file) CONFIG_CERT=$value ;;
+            private_key_file) CONFIG_KEY=$value ;;
+            chain_file) CONFIG_CHAIN=$value ;;
+            fullchain_file) CONFIG_FULLCHAIN=$value ;;
+            *)
+                echo "ERROR: Unknown config key '$key' at $file:$line_number." >&2
+                exit 1
+                ;;
+        esac
+    done < "$file"
+}
+
+up_command() {
+    local config_file= arg domain= ip= jar= jar_source= cert_source= cert= key= chain= fullchain=
+    local download_jar=0 jar_option=0 generate_config=0
+    local -a positional=()
+    local -a args=("$@")
+    CONFIG_DOMAIN=
+    CONFIG_IP=
+    CONFIG_JAR=
+    CONFIG_JAR_SOURCE=
+    CONFIG_CERT_SOURCE=
+    CONFIG_CERT=
+    CONFIG_KEY=
+    CONFIG_CHAIN=
+    CONFIG_FULLCHAIN=
+
+    # Locate the config first so named flags override it regardless of order.
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --config)
+                [ $# -ge 2 ] || { echo "ERROR: --config requires a file." >&2; exit 1; }
+                config_file=$2
+                shift 2
+                ;;
+            --config=*) config_file=${1#*=}; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    if [ -z "$config_file" ]; then
+        if [ -f collaborator.conf ]; then
+            config_file=collaborator.conf
+        else
+            generate_config=1
+        fi
+    fi
+
+    if [ -n "$config_file" ]; then
+        load_config "$config_file"
+        local config_dir
+        config_dir=$(cd "$(dirname "$config_file")" && pwd)
+        [ -z "$CONFIG_JAR" ] || [[ "$CONFIG_JAR" = /* ]] || CONFIG_JAR=$config_dir/$CONFIG_JAR
+        [ -z "$CONFIG_CERT" ] || [[ "$CONFIG_CERT" = /* ]] || CONFIG_CERT=$config_dir/$CONFIG_CERT
+        [ -z "$CONFIG_KEY" ] || [[ "$CONFIG_KEY" = /* ]] || CONFIG_KEY=$config_dir/$CONFIG_KEY
+        [ -z "$CONFIG_CHAIN" ] || [[ "$CONFIG_CHAIN" = /* ]] || CONFIG_CHAIN=$config_dir/$CONFIG_CHAIN
+        [ -z "$CONFIG_FULLCHAIN" ] || [[ "$CONFIG_FULLCHAIN" = /* ]] || CONFIG_FULLCHAIN=$config_dir/$CONFIG_FULLCHAIN
+    fi
+
+    set -- "${args[@]}"
+    while [ $# -gt 0 ]; do
+        arg=$1
+        case $arg in
+            --config) shift 2 ;;
+            --config=*) shift ;;
+            --domain) [ $# -ge 2 ] || { echo "ERROR: --domain requires a value." >&2; exit 1; }; domain=$2; shift 2 ;;
+            --domain=*) domain=${arg#*=}; shift ;;
+            --ip) [ $# -ge 2 ] || { echo "ERROR: --ip requires a value." >&2; exit 1; }; ip=$2; shift 2 ;;
+            --ip=*) ip=${arg#*=}; shift ;;
+            --jar) [ $# -ge 2 ] || { echo "ERROR: --jar requires a file." >&2; exit 1; }; jar=$2; jar_option=1; shift 2 ;;
+            --jar=*) jar=${arg#*=}; jar_option=1; shift ;;
+            --download-jar) download_jar=1; shift ;;
+            --certificate-source) [ $# -ge 2 ] || { echo "ERROR: --certificate-source requires a value." >&2; exit 1; }; cert_source=$2; shift 2 ;;
+            --certificate-source=*) cert_source=${arg#*=}; shift ;;
+            --cert) [ $# -ge 2 ] || { echo "ERROR: --cert requires a file." >&2; exit 1; }; cert=$2; shift 2 ;;
+            --cert=*) cert=${arg#*=}; shift ;;
+            --key) [ $# -ge 2 ] || { echo "ERROR: --key requires a file." >&2; exit 1; }; key=$2; shift 2 ;;
+            --key=*) key=${arg#*=}; shift ;;
+            --chain) [ $# -ge 2 ] || { echo "ERROR: --chain requires a file." >&2; exit 1; }; chain=$2; shift 2 ;;
+            --chain=*) chain=${arg#*=}; shift ;;
+            --fullchain) [ $# -ge 2 ] || { echo "ERROR: --fullchain requires a file." >&2; exit 1; }; fullchain=$2; shift 2 ;;
+            --fullchain=*) fullchain=${arg#*=}; shift ;;
+            -h|--help) usage; return ;;
+            --*) echo "ERROR: Unknown option '$arg'." >&2; exit 1 ;;
+            *) positional+=("$arg"); shift ;;
+        esac
+    done
+
+    if [ ${#positional[@]} -gt 3 ]; then
+        echo "ERROR: Too many positional arguments for 'up'." >&2
+        exit 1
+    fi
+    domain=${domain:-${CONFIG_DOMAIN:-${positional[0]:-}}}
+    ip=${ip:-${CONFIG_IP:-${positional[1]:-}}}
+    if [ -n "$jar" ]; then
+        jar_option=1
+    fi
+    if [ "$download_jar" -eq 1 ] && { [ "$jar_option" -eq 1 ] || [ -n "${positional[2]:-}" ]; }; then
+        echo "ERROR: --download-jar cannot be combined with --jar or a positional JAR." >&2
+        exit 1
+    fi
+    jar=${jar:-${positional[2]:-${CONFIG_JAR:-}}}
+    if [ "$download_jar" -eq 1 ]; then
+        jar_source=download
+    elif [ "$jar_option" -eq 1 ] || [ -n "${positional[2]:-}" ]; then
+        jar_source=file
+    else
+        jar_source=${CONFIG_JAR_SOURCE:-}
+    fi
+    cert_source=${cert_source:-${CONFIG_CERT_SOURCE:-}}
+    cert=${cert:-${CONFIG_CERT:-}}
+    key=${key:-${CONFIG_KEY:-}}
+    chain=${chain:-${CONFIG_CHAIN:-}}
+    fullchain=${fullchain:-${CONFIG_FULLCHAIN:-}}
+    up "$domain" "$ip" "$jar" "$cert" "$key" "$chain" "$fullchain" "$cert_source" "$jar_source" "$generate_config"
+}
+
+write_default_config() {
+    local domain=$1 ip=$2 certificate_mode=$3 temporary=collaborator.conf.tmp
+    if [ "$certificate_mode" = letsencrypt ]; then
+        certificate_mode=managed-letsencrypt
+    else
+        certificate_mode=managed-files
+    fi
+    {
+        echo "# Generated by ./collaborator up. CLI flags override these values."
+        printf 'domain=%s\n' "$domain"
+        printf 'public_ip=%s\n' "$ip"
+        echo
+        echo "# Reuse the JAR already managed by this deployment."
+        echo "burp_jar_source=existing"
+        echo "burp_jar=burp/pkg/burp.jar"
+        echo
+        echo "# Reuse the certificates already managed by this deployment."
+        printf 'certificate_source=%s\n' "$certificate_mode"
+        echo "certificate_file=burp/keys/cert.pem"
+        echo "private_key_file=burp/keys/privkey.pem"
+        echo "chain_file=burp/keys/chain.pem"
+        echo "fullchain_file=burp/keys/fullchain.pem"
+    } > "$temporary"
+    mv "$temporary" collaborator.conf
+    echo "Saved deployment settings to collaborator.conf."
+}
+
+initialization_cleanup() {
+    local status=$?
+    [ "$status" -ne 0 ] || status=1
+    echo "An error occurred during setup. Correct the problem and run './collaborator up' again." >&2
+    if [ "${BURP_STARTED:-0}" -eq 1 ]; then
+        docker rm -f burp >/dev/null 2>&1 || true
+    fi
+    [ ! -f burp/conf/burp.config.full ] || mv -f burp/conf/burp.config.full burp/conf/burp.config
+    [ ! -f burp/conf/burp.config.dnsonly ] || rm -f burp/conf/burp.config.dnsonly
+    exit "$status"
+}
+
+validate_initialization() {
+    local domain=$1 ip=$2
+    command -v awk >/dev/null 2>&1 || { echo "ERROR: awk is required." >&2; exit 1; }
+    if [[ ! "$domain" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]; then
+        echo "ERROR: '$domain' is not a valid DNS domain name." >&2
+        exit 1
+    fi
+    if ! awk -v ip="$ip" 'BEGIN {
+        n = split(ip, octets, ".")
+        if (n != 4) exit 1
+        for (i = 1; i <= 4; i++) {
+            if (octets[i] !~ /^[0-9]+$/ || octets[i] < 0 || octets[i] > 255) exit 1
+        }
+    }' </dev/null; then
+        echo "ERROR: '$ip' is not a valid IPv4 address." >&2
+        exit 1
+    fi
+    if command -v ss >/dev/null 2>&1 && ss -lntu | grep ':53 ' >/dev/null; then
+        echo "ERROR: Port 53 is already in use, commonly by systemd-resolved." >&2
+        echo "Free TCP and UDP port 53, then run setup again." >&2
+        exit 1
+    fi
+}
+
+generate_server_config() {
+    local domain=$1 ip=$2 metrics=$3
+    docker run --rm --entrypoint jq \
+        -v "$PWD/burp/conf:/conf:ro" certbot-burp \
+        --arg domain "$domain" --arg ip "$ip" --arg metrics "$metrics" '
+        .serverDomain = $domain |
+        .eventCapture.publicAddress = [$ip] |
+        .polling.http.publicAddress = [$ip] |
+        .polling.https.publicAddress = [$ip] |
+        .dns.interfaces[].publicAddress = [$ip] |
+        .metrics.path = $metrics
+    ' /conf/burp.config.template > burp/conf/burp.config
+}
+
+install_letsencrypt_certificates() {
+    local domain=$1
+    docker run --rm --entrypoint sh \
+        -v "$PWD/certbot/letsencrypt:/etc/letsencrypt:ro" \
+        -v "$PWD/burp/keys:/keys" \
+        certbot-burp -c '
+            set -eu
+            lineage="/etc/letsencrypt/live/$1"
+            cp -L -f "$lineage/cert.pem" /keys/cert.pem
+            cp -L -f "$lineage/chain.pem" /keys/chain.pem
+            cp -L -f "$lineage/fullchain.pem" /keys/fullchain.pem
+            cp -L -f "$lineage/privkey.pem" /keys/privkey.pem
+            chmod 644 /keys/cert.pem /keys/chain.pem /keys/fullchain.pem
+            chmod 600 /keys/privkey.pem
+            chown 999:999 /keys/privkey.pem
+        ' sh "$domain"
+}
+
+initialize_deployment() {
+    local domain=$1 ip=$2 cert_source=$3 cert=$4 key=$5 chain=$6 fullchain=$7
+    local metrics
+    BURP_STARTED=0
+    trap initialization_cleanup ERR INT TERM
+
+    [ -s burp/pkg/burp.jar ] || { echo "ERROR: burp/pkg/burp.jar is missing." >&2; exit 1; }
+    metrics=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+
+    echo "Initializing *.$domain on public IP $ip"
+    docker build -t certbot-burp certbot
+    docker build -t burp burp
+    generate_server_config "$domain" "$ip" "$metrics"
+
+    if [ "$cert_source" = files ]; then
+        echo "Installing supplied certificate files..."
+        cp -L "$cert" burp/keys/cert.pem
+        cp -L "$key" burp/keys/privkey.pem
+        if [ -n "$chain" ]; then
+            cp -L "$chain" burp/keys/chain.pem
+        else
+            cp -L "$fullchain" burp/keys/chain.pem
+        fi
+        if [ -n "$fullchain" ]; then
+            cp -L "$fullchain" burp/keys/fullchain.pem
+        else
+            awk '1' "$cert" "$chain" > burp/keys/fullchain.pem
+        fi
+        docker run --rm --entrypoint chown \
+            -v "$PWD/burp/keys:/keys" certbot-burp 999:999 /keys/privkey.pem
+        printf '%s\n' files > burp/keys/certificate-source
+        ./burp/run.sh
+        trap - ERR INT TERM
+        echo
+        echo "SUCCESS! Burp is running with the supplied certificate for *.$domain"
+        echo "Certificate renewal is managed by the certificate provider or administrator."
+        return
+    fi
+
+    docker run --rm --entrypoint jq \
+        -v "$PWD/burp/conf:/conf:ro" certbot-burp \
+        'del(.eventCapture.https, .eventCapture.smtps, .polling)' \
+        /conf/burp.config > burp/conf/burp.config.dnsonly
+    cp burp/conf/burp.config burp/conf/burp.config.full
+    mv -f burp/conf/burp.config.dnsonly burp/conf/burp.config
+
+    ./burp/run-dnsonly.sh
+    BURP_STARTED=1
+    ./certbot/new.sh "$domain"
+    mv -f burp/conf/burp.config.full burp/conf/burp.config
+
+    install_letsencrypt_certificates "$domain"
+    printf '%s\n' letsencrypt > burp/keys/certificate-source
+
+    docker stop burp
+    docker rm burp
+    BURP_STARTED=0
+    ./burp/run.sh
+    trap - ERR INT TERM
+
+    echo
+    echo "SUCCESS! Burp is running with the Let's Encrypt certificate for *.$domain"
+    echo "Your metrics path is $metrics. Change addressWhitelist to access it remotely."
+}
+
+up() {
+    local domain ip jar cert key chain fullchain cert_source jar_source file
+    local restart_needed=0 generate_config=${10:-0}
+    JAR_CHANGED=0
+    cert=${4:-}
+    key=${5:-}
+    chain=${6:-}
+    fullchain=${7:-}
+    cert_source=${8:-}
+    jar_source=${9:-}
+    if [ -z "$cert_source" ] && { [ -n "$cert" ] || [ -n "$key" ] || [ -n "$chain" ] || [ -n "$fullchain" ]; }; then
+        cert_source=files
+    fi
+
+    require_docker
+
+    if configured; then
+        case $jar_source in
+            download) download_burp_jar ;;
+            file) install_local_jar "$3" ;;
+            existing|'') ;;
+            *) echo "ERROR: burp_jar_source must be 'download', 'file', or 'existing'." >&2; exit 1 ;;
+        esac
+        [ "$JAR_CHANGED" -eq 0 ] || restart_needed=1
+        ensure_images
+        if [ "$cert_source" = files ]; then
+            [ -n "$cert" ] && [ -n "$key" ] && { [ -n "$chain" ] || [ -n "$fullchain" ]; } || {
+                echo "ERROR: Updating a supplied certificate requires --cert, --key, and --chain or --fullchain." >&2
+                exit 1
+            }
+            for file in "$cert" "$key" ${chain:+"$chain"} ${fullchain:+"$fullchain"}; do
+                [ -f "$file" ] || { echo "ERROR: Certificate file not found at '$file'." >&2; exit 1; }
+            done
+            cp -L "$cert" burp/keys/cert.pem
+            cp -L "$key" burp/keys/privkey.pem
+            if [ -n "$chain" ]; then
+                cp -L "$chain" burp/keys/chain.pem
+            else
+                cp -L "$fullchain" burp/keys/chain.pem
+            fi
+            if [ -n "$fullchain" ]; then
+                cp -L "$fullchain" burp/keys/fullchain.pem
+            else
+                awk '1' "$cert" "$chain" > burp/keys/fullchain.pem
+            fi
+            docker run --rm --entrypoint chown \
+                -v "$PWD/burp/keys:/keys" certbot-burp 999:999 /keys/privkey.pem
+            printf '%s\n' files > burp/keys/certificate-source
+            echo "Supplied certificate files installed."
+            restart_needed=1
+        elif [ -n "$cert_source" ] && [ "$cert_source" != letsencrypt ] && [[ "$cert_source" != managed-* ]]; then
+            echo "ERROR: certificate source is invalid." >&2
+            exit 1
+        fi
+        if docker ps --format '{{.Names}}' | grep -qx burp; then
+            if [ "$restart_needed" -eq 1 ]; then
+                docker restart burp >/dev/null
+                echo "Burp Collaborator restarted with the updated files."
+            else
+                echo "Burp Collaborator is already running."
+            fi
+        elif docker ps -a --format '{{.Names}}' | grep -qx burp; then
+            docker start burp >/dev/null
+            echo "Burp Collaborator started."
+        else
+            ./burp/run.sh
+        fi
+        status
+        return
+    fi
+
+    domain=$(prompt_value domain "Collaborator domain (for example collab.example.com)" "${1:-}")
+    ip=$(prompt_value public-ip "Public IPv4 address of this server" "${2:-}")
+
+    if [ -z "$cert_source" ] && [ -t 0 ]; then
+        read -r -p "Certificate source [letsencrypt/files] (default: letsencrypt): " cert_source
+    fi
+    cert_source=${cert_source:-letsencrypt}
+
+    case $cert_source in
+        letsencrypt)
+            if [ -n "$cert$key$chain$fullchain" ]; then
+                echo "ERROR: Certificate files cannot be used with certificate_source=letsencrypt." >&2
+                exit 1
+            fi
+            ;;
+        files)
+            cert=$(prompt_value certificate "Leaf certificate PEM file" "$cert")
+            key=$(prompt_value private-key "Private key PEM file" "$key")
+            if [ -z "$chain" ] && [ -z "$fullchain" ]; then
+                chain=$(prompt_value chain "CA chain/bundle PEM file" "")
+            fi
+            for file in "$cert" "$key" ${chain:+"$chain"} ${fullchain:+"$fullchain"}; do
+                if [ ! -f "$file" ]; then
+                    echo "ERROR: Certificate file not found at '$file'." >&2
+                    exit 1
+                fi
+            done
+            ;;
+        managed-letsencrypt|managed-files)
+            echo "ERROR: Managed certificate settings require an existing completed deployment." >&2
+            echo "Remove collaborator.conf to repeat first-time setup." >&2
+            exit 1
+            ;;
+        *)
+            echo "ERROR: certificate source must be 'letsencrypt' or 'files'." >&2
+            exit 1
+            ;;
+    esac
+
+    # Validate the deployment before copying or downloading a JAR.
+    validate_initialization "$domain" "$ip"
+
+    if [ -z "$jar_source" ]; then
+        if [ -s burp/pkg/burp.jar ]; then
+            jar_source=existing
+        else
+            jar_source=download
+            echo "No managed Burp JAR was found; downloading the latest stable release."
+        fi
+    fi
+
+    case $jar_source in
+        download) download_burp_jar ;;
+        file)
+            jar=$(prompt_value burp-jar "Path to your Burp Suite JAR" "${3:-}")
+            install_local_jar "$jar"
+            ;;
+        existing) ;;
+        *) echo "ERROR: burp_jar_source must be 'download', 'file', or 'existing'." >&2; exit 1 ;;
+    esac
+
+    initialize_deployment "$domain" "$ip" "$cert_source" "$cert" "$key" "$chain" "$fullchain"
+
+    if [ "$generate_config" -eq 1 ]; then
+        write_default_config "$domain" "$ip" "$cert_source"
+    fi
+}
+
+down() {
+    require_docker
+    docker rm -f burp certbot >/dev/null 2>&1 || true
+    echo "Burp Collaborator stopped. Certificates and configuration were preserved."
+}
+
+status() {
+    require_docker
+    if docker ps --format '{{.Names}}' | grep -qx burp; then
+        docker ps --filter name='^/burp$' --format 'Burp Collaborator is running ({{.Status}}).'
+    elif docker ps -a --format '{{.Names}}' | grep -qx burp; then
+        echo "Burp Collaborator is stopped."
+        return 1
+    else
+        echo "Burp Collaborator is not configured or has not been started."
+        return 1
+    fi
+}
+
+main() {
+    case ${1:-} in
+        up)
+            shift
+            up_command "$@"
+            ;;
+        down)
+            down
+            ;;
+        status)
+            status
+            ;;
+        logs)
+            require_docker
+            exec docker logs -f burp
+            ;;
+        renew)
+            require_docker
+            if [ -f burp/keys/certificate-source ] && [ "$(< burp/keys/certificate-source)" = files ]; then
+                echo "This deployment uses supplied certificate files; automatic Let's Encrypt renewal is disabled."
+                echo "Install renewed files with the same certificate options used during setup."
+                exit 0
+            fi
+            ensure_images
+            exec ./certbot/certificaterenewal.sh
+            ;;
+        help|-h|--help|'')
+            usage
+            ;;
+        *)
+            echo "ERROR: Unknown command '$1'." >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
